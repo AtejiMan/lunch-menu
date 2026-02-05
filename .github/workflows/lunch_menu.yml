@@ -5,15 +5,14 @@ on:
     # 매일 오전 11:00 (UTC 2:00 = 한국시간 11:00)
     - cron: '0 2 * * *'
   
-  # 수동 실행 가능
-  workflow_dispatch:
+  workflow_dispatch:  # 수동 실행 가능
 
 jobs:
   scrape-and-notify:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout repository
+    - name: Checkout code
       uses: actions/checkout@v4
     
     - name: Set up Python
@@ -25,20 +24,27 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-
     
-    - name: Cache EasyOCR models
+    - name: Cache Playwright browsers
       uses: actions/cache@v3
       with:
-        path: ~/.EasyOCR
-        key: ${{ runner.os }}-easyocr-models
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-playwright-
     
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+    
+    - name: Install Playwright browsers
+      run: |
+        playwright install chromium
+        playwright install-deps chromium
     
     - name: Run lunch menu scraper
       env:
@@ -46,7 +52,7 @@ jobs:
         SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
         RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
       run: |
-        python lunch_menu.py
+        python lunch_menu_playwright.py
     
     - name: Upload logs (if failed)
       if: failure()
