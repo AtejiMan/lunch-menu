@@ -336,7 +336,9 @@ class EmailNotifier:
 
 
 def main():
-    """메인 함수"""
+    """메인 함수 - 재시도 로직 포함"""
+    import time
+    
     # 환경 변수에서 이메일 정보 가져오기
     SENDER_EMAIL = os.environ.get('SENDER_EMAIL')
     SENDER_PASSWORD = os.environ.get('SENDER_PASSWORD')
@@ -368,24 +370,56 @@ def main():
         ),
     ]
     
-    # 스크래핑 실행
+    # 재시도 설정
+    MAX_RETRIES = 6  # 최대 6번 시도 (1.5시간)
+    RETRY_INTERVAL = 15 * 60  # 15분 (초 단위)
+    
     scraper = MenuScraper()
-    results = []
+    notifier = EmailNotifier(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL)
     
-    for restaurant in restaurants:
-        try:
-            result = scraper.scrape_menu(restaurant)
-            if result:
-                results.append(result)
-        except Exception as e:
-            logger.error(f"{restaurant.name} 처리 중 오류: {e}")
-    
-    # 이메일 알림 전송
-    if results:
-        notifier = EmailNotifier(SENDER_EMAIL, SENDER_PASSWORD, RECIPIENT_EMAIL)
-        notifier.send_menu_notification(results)
-    else:
-        logger.warning("수집된 메뉴 정보가 없습니다")
+    for attempt in range(1, MAX_RETRIES + 1):
+        logger.info(f"\n{'='*60}")
+        logger.info(f"시도 {attempt}/{MAX_RETRIES}")
+        logger.info(f"현재 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"{'='*60}")
+        
+        # 스크래핑 실행
+        results = []
+        for restaurant in restaurants:
+            try:
+                result = scraper.scrape_menu(restaurant)
+                if result:
+                    results.append(result)
+            except Exception as e:
+                logger.error(f"{restaurant.name} 처리 중 오류: {e}")
+        
+        # 오늘 날짜 메뉴가 있는지 확인
+        today_menus = [r for r in results if r and r['is_today']]
+        
+        if today_menus:
+            # 오늘 메뉴를 찾았으면 바로 전송하고 종료
+            logger.info(f"✅ 오늘 메뉴를 찾았습니다! ({len(today_menus)}개)")
+            notifier.send_menu_notification(results)
+            logger.info("이메일 전송 완료. 프로그램 종료.")
+            return
+        else:
+            # 오늘 메뉴가 없으면
+            logger.warning(f"⚠️ 아직 오늘 메뉴가 올라오지 않았습니다.")
+            
+            if attempt < MAX_RETRIES:
+                # 마지막 시도가 아니면 대기
+                wait_minutes = RETRY_INTERVAL // 60
+                logger.info(f"⏰ {wait_minutes}분 후에 다시 시도합니다...")
+                time.sleep(RETRY_INTERVAL)
+            else:
+                # 마지막 시도였으면 기존 메뉴라도 전송
+                logger.warning(f"⏰ 최대 재시도 횟수에 도달했습니다.")
+                if results:
+                    logger.info("가장 최근 메뉴를 전송합니다.")
+                    notifier.send_menu_notification(results)
+                else:
+                    logger.error("수집된 메뉴 정보가 없습니다.")
+                return
 
 
 if __name__ == "__main__":
