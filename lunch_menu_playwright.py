@@ -308,11 +308,21 @@ class EmailNotifier:
                 
                 try:
                     response = requests.get(menu['image_url'], timeout=10)
-                    img = MIMEImage(response.content)
+                    response.raise_for_status()
+                    
+                    # Content-Type에서 MIME 타입 추출
+                    content_type = response.headers.get('Content-Type', 'image/jpeg')
+                    if '/' in content_type:
+                        subtype = content_type.split('/', 1)[1].split(';')[0].strip()
+                    else:
+                        subtype = 'jpeg'
+                    
+                    img = MIMEImage(response.content, _subtype=subtype)
                     img.add_header('Content-ID', f'<image{i}>')
                     msg.attach(img)
+                    logger.info(f"이미지 첨부 성공: {menu['restaurant']}")
                 except Exception as e:
-                    logger.error(f"이미지 첨부 실패: {e}")
+                    logger.error(f"이미지 첨부 실패 ({menu['restaurant']}): {e}")
         
         if old_menus:
             html += """
